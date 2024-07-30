@@ -25,6 +25,7 @@ from c7n.tags import universal_augment
 from c7n.utils import type_schema, local_session, chunks, get_retry, jmespath_search
 from botocore.config import Config
 import re
+import time
 
 
 class DescribeAlarm(DescribeSource):
@@ -559,6 +560,45 @@ class LogGroup(QueryResourceManager):
         # apis can use that form, so normalize to standard arn.
         return [r['arn'][:-2] for r in resources]
 
+@LogGroup.filter_registry.register('filter-log-events')
+#@filters.register('filter-log-events')
+class FilterLogEventsFilter(Filter):
+
+    schema = type_schema(
+        'filter-log-events',
+        **{'log-group-name': {'type': 'string'},
+           'filter-pattern': {'oneOf': [
+                {'$ref': '#/definitions/filters/value'},
+                {'type': 'string'}]}})
+
+    def process(self, resources, event=None):
+
+        def _process_log_event(logEvents, events):
+            import json
+            if len(logEvents['events']) > 0:
+                for evnt in logEvents['events']:
+                    evnt['message'] = json.loads(evnt['message'])
+                    events.append(evnt)
+
+        events = []
+        session = local_session(self.manager.session_factory)
+        client = session.client('logs')
+        timeInterval = self.data.get('time-interval', 5)
+        logGroupName = self.data.get('log-group-name')
+        filterPattern = self.data.get('filter-pattern', '') 
+        starttime=int(time.mktime((datetime.utcnow() - timedelta(minutes=timeInterval)).timetuple()))*1000
+        endtime=round(time.time()*1000)
+        if filterPattern != '':
+            filterPattern = filterPattern['value']
+        logEvents = client.filter_log_events(logGroupName=logGroupName, filterPattern=filterPattern, startTime=starttime, endTime=endtime)
+
+        _process_log_event(logEvents, events) 
+        while "nextToken" in logEvents.keys():
+            logEvents = client.filter_log_events(logGroupName=logGroupName, filterPattern=filterPattern, startTime=starttime, endTime=endtime, nextToken=logEvents['nextToken'])
+
+            _process_log_event(logEvents, events)
+
+        return events
 
 @resources.register('insight-rule')
 class InsightRule(QueryResourceManager):
