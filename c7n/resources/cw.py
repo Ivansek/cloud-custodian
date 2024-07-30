@@ -567,6 +567,7 @@ class FilterLogEventsFilter(Filter):
     schema = type_schema(
         'filter-log-events',
         **{'log-group-name': {'type': 'string'},
+           'time-interval': {'type': 'integer'},
            'filter-pattern': {'oneOf': [
                 {'$ref': '#/definitions/filters/value'},
                 {'type': 'string'}]}})
@@ -587,7 +588,7 @@ class FilterLogEventsFilter(Filter):
         logGroupName = self.data.get('log-group-name')
         filterPattern = self.data.get('filter-pattern', '') 
         starttime=int(time.mktime((datetime.utcnow() - timedelta(minutes=timeInterval)).timetuple()))*1000
-        endtime=round(time.time()*1000)
+        endtime=int(time.mktime(datetime.utcnow().timetuple()))*1000
         if filterPattern != '':
             filterPattern = filterPattern['value']
         logEvents = client.filter_log_events(logGroupName=logGroupName, filterPattern=filterPattern, startTime=starttime, endTime=endtime)
